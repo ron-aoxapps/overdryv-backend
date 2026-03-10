@@ -13,18 +13,591 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String     @id @default(uuid())
-  name      String
-  email     String     @unique
-  password  String
-  status    String   @default("inactive")
-  token     String?
-  role      String
+// Core organization models
+model Organization {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subdomain                   String                      @unique @db.Text
+  name                        String                      @db.Text
+  legal_name                  String?                     @db.Text
+  subscription_plan           String                      @default("starter") @db.Text
+  payment_model               String                      @default("dual_pricing") @db.Text
+  status                      String?                     @default("trial") @db.Text
+  billing_email               String                      @db.Text
+  phone                        String?                     @db.Text
+  address                     Json?                       @db.JsonB
+  trial_ends_at               DateTime?                   @db.Timestamptz(6)
+  subscription_starts_at      DateTime?                   @db.Timestamptz(6)
+  subscription_ends_at        DateTime?                   @db.Timestamptz(6)
+  next_billing_date           DateTime?                   @db.Timestamptz(6)
+  settings                    Json?                       @default("{\"branding\": {\"logo_url\": null, \"primary_color\": \"#2563eb\", \"secondary_color\": \"#1e293b\"}, \"notifications\": {\"sms_enabled\": true, \"email_enabled\": true}, \"business_hours\": {\"friday\": {\"open\": \"08:00\", \"close\": \"18:00\"}, \"monday\": {\"open\": \"08:00\", \"close\": \"18:00\"}, \"sunday\": {\"closed\": true}, \"tuesday\": {\"open\": \"08:00\", \"close\": \"18:00\"}, \"saturday\": {\"open\": \"08:00\", \"close\": \"16:00\"}, \"thursday\": {\"open\": \"08:00\", \"close\": \"18:00\"}, \"wednesday\": {\"open\": \"08:00\", \"close\": \"18:00\"}}}") @db.JsonB
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  created_by                  String?                     @db.Uuid
+  monthly_price               Decimal?                    @db.Decimal(10, 2)
+  user_limit                  Int?
+  subscription_status         String?                     @default("onboarding") @db.Text
+  onboarding_completed_at     DateTime?                   @db.Timestamptz(6)
+  first_billing_date          DateTime?                   @db.Timestamptz(6)
+  is_founder                  Boolean                     @default(false)
+  current_user_count          Int                         @default(1)
+  current_customer_count      Int                         @default(0)
+  current_work_orders_total   Int                         @default(0)
+  current_storage_bytes       BigInt                      @default(0)
+  addon_quickbooks_async      Boolean                     @default(false)
+  addon_partstech             Boolean                     @default(false)
+  addon_digits_ai             String?                     @db.Text
+  addon_honkamp_payroll       Boolean                     @default(false)
+  payment_gateway             String?                     @default("dejavoo") @db.Text
+  dejavoo_merchant_id         String?                     @db.Text
 
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  // Relations
+  members                     OrganizationMember[]
+  features                    OrganizationFeature[]
+  integrations                OrganizationIntegration[]
+  feature_flags               FeatureFlag[]
+  feature_audit_log           FeatureAuditLog[]
+  profiles                    Profile[]
+  bays                        Bay[]
+  vehicles                    Vehicle[]
+  estimates                   Estimate[]
+  work_orders                 WorkOrder[]
+  service_items               ServiceItem[]
+  photos                      Photo[]
+  waivers                     Waiver[]
+  parts                       Part[]
+  invoices                    Invoice[]
+  transactions                Transaction[]
+  payment_methods             PaymentMethod[]
+  technician_settings         TechnicianSetting[]
+  subscription_history        SubscriptionHistory[]
+  monthly_targets             MonthlyTarget[]
+  usage_tracking              UsageTracking[]
+  tenant_sequences            TenantSequence?
 
-  @@index([email])
+  @@index([subscription_plan])
+  @@index([status])
+  @@index([subdomain])
+}
+
+model Profile {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                       String                      @unique @db.Text
+  first_name                  String                      @db.Text
+  last_name                   String                      @db.Text
+  phone                       String?                     @db.Text
+  address                     Json?                       @db.JsonB
+  customer_notes              String?                     @db.Text
+  role                        String                      @default("customer") @db.Text
+  password                    String?                     @db.Text
+  access_token                String?                     @db.Text
+  refresh_token               String?                     @db.Text
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  organization_id             String                      @db.Uuid
+  
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id])
+  vehicles                    Vehicle[]
+  estimates                   Estimate[]
+  work_orders_customer        WorkOrder[]                 @relation("customer")
+  work_orders_technician      WorkOrder[]                 @relation("technician")
+  photos_uploaded             Photo[]
+  waivers_customer            Waiver[]
+  technician_settings         TechnicianSetting?
+  
+  @@index([organization_id])
+  @@unique([organization_id, email])
+}
+
+model OrganizationMember {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  user_id                     String                      @db.Uuid
+  role                        String                      @default("member") @db.Text
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, user_id])
+  @@index([organization_id])
+  @@index([user_id])
+}
+
+model OrganizationFeature {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  feature_key                 String                      @db.Text
+  enabled                     Boolean                     @default(false)
+  config                      Json?                       @default("{}") @db.JsonB
+  enabled_at                  DateTime?                   @db.Timestamptz(6)
+  disabled_at                 DateTime?                   @db.Timestamptz(6)
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, feature_key])
+  @@index([organization_id])
+  @@index([feature_key])
+  @@index([organization_id, enabled])
+}
+
+model OrganizationIntegration {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  integration_key             String                      @db.Text
+  enabled                     Boolean                     @default(false)
+  credentials                 Json?                       @db.JsonB
+  config                      Json?                       @default("{}") @db.JsonB
+  status                      String?                     @default("disabled") @db.Text
+  last_synced_at              DateTime?                   @db.Timestamptz(6)
+  last_error                  String?                     @db.Text
+  error_count                 Int?                        @default(0)
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  created_by                  String?                     @db.Uuid
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, integration_key])
+  @@index([organization_id])
+  @@index([integration_key])
+  @@index([status])
+}
+
+model FeatureFlag {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  feature_key                 String                      @db.Text
+  is_enabled                  Boolean                     @default(false)
+  reason                      String?                     @db.Text
+  enabled_by                  String?                     @db.Uuid
+  enabled_at                  DateTime?                   @db.Timestamptz(6)
+  expires_at                  DateTime?                   @db.Timestamptz(6)
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, feature_key])
+  @@index([organization_id])
+}
+
+model FeatureAuditLog {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  feature_key                 String?                     @db.Text
+  integration_key             String?                     @db.Text
+  action                      String                      @db.Text
+  changed_by                  String?                     @db.Uuid
+  changed_by_name             String?                     @db.Text
+  previous_value              Json?                       @db.JsonB
+  new_value                   Json?                       @db.JsonB
+  ip_address                  String?                     @db.Inet
+  user_agent                  String?                     @db.Text
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([organization_id])
+  @@index([action])
+  @@index([created_at(sort: Desc)])
+  @@index([changed_by])
+}
+
+// Bay Management
+model Bay {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  name                        String                      @db.Text
+  description                 String?                     @db.Text
+  is_active                   Boolean                     @default(true)
+  display_order               Int                         @default(0)
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  work_orders                 WorkOrder[]
+
+  @@index([organization_id])
+}
+
+// Vehicle Management
+model Vehicle {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customer_id                 String?                     @db.Uuid
+  vin                         String?                     @unique @db.Text
+  make                        String?                     @db.Text
+  model                       String?                     @db.Text
+  year                        Int
+  color                       String?                     @db.Text
+  mileage                     Int?
+  license_plate               String?                     @db.Text
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  organization_id             String                      @db.Uuid
+
+  // Relations
+  customer                    Profile?                    @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  organization                Organization                @relation(fields: [organization_id], references: [id])
+  estimates                   Estimate[]
+  work_orders                 WorkOrder[]
+
+  @@unique([organization_id, vin])
+  @@index([customer_id])
+  @@index([organization_id])
+}
+
+// Estimates
+model Estimate {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  estimate_number             String                      @unique @db.Text
+  customer_id                 String?                     @db.Uuid
+  vehicle_id                  String?                     @db.Uuid
+  status                      String                      @default("draft") @db.Text
+  service_type                String                      @db.Text
+  description                 String                      @db.Text
+  estimated_completion        DateTime?                   @db.Timestamptz(6)
+  total_amount                Decimal?                    @default(0) @db.Decimal(10, 2)
+  notes                       String?                     @db.Text
+  priority                    String                      @default("normal") @db.Text
+  valid_until                 DateTime?                   @default(dbgenerated("now() + '30 days'::interval")) @db.Timestamptz(6)
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  converted_to_work_order_id  String?                     @db.Uuid
+  organization_id             String                      @db.Uuid
+  number                      String?                     @db.Text
+
+  // Relations
+  customer                    Profile?                    @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  vehicle                     Vehicle?                    @relation(fields: [vehicle_id], references: [id], onDelete: Cascade)
+  converted_work_order        WorkOrder?                  @relation(fields: [converted_to_work_order_id], references: [id], onDelete: SetNull)
+  organization                Organization                @relation(fields: [organization_id], references: [id])
+  service_items               ServiceItem[]
+
+  @@unique([organization_id, number])
+  @@index([customer_id])
+  @@index([vehicle_id])
+  @@index([status])
+  @@index([organization_id])
+}
+
+// Work Orders
+model WorkOrder {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  work_order_number           String                      @unique @default(dbgenerated("'WO-'::text || lpad((EXTRACT(epoch FROM now()))::text, 10, '0'::text)")) @db.Text
+  customer_id                 String?                     @db.Uuid
+  vehicle_id                  String?                     @db.Uuid
+  status                      String                      @default("pending") @db.Text
+  service_type                String                      @db.Text
+  description                 String                      @db.Text
+  estimated_completion        DateTime?                   @db.Timestamptz(6)
+  actual_completion           DateTime?                   @db.Timestamptz(6)
+  technician_id               String?                     @db.Uuid
+  total_amount                Decimal?                    @default(0) @db.Decimal(10, 2)
+  notes                       String?                     @db.Text
+  priority                    String                      @default("normal") @db.Text
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  organization_id             String                      @db.Uuid
+  number                      String?                     @db.Text
+  bay_id                      String?                     @db.Uuid
+  scheduled_start             DateTime?                   @db.Date
+  scheduled_end               DateTime?                   @db.Date
+
+  // Relations
+  customer                    Profile?                    @relation("customer", fields: [customer_id], references: [id], onDelete: Cascade)
+  vehicle                     Vehicle?                    @relation(fields: [vehicle_id], references: [id], onDelete: Cascade)
+  technician                  Profile?                    @relation("technician", fields: [technician_id], references: [id])
+  organization                Organization                @relation(fields: [organization_id], references: [id])
+  bay                         Bay?                        @relation(fields: [bay_id], references: [id], onDelete: SetNull)
+  estimates                   Estimate[]
+  service_items               ServiceItem[]
+  photos                      Photo[]
+  waivers                     Waiver[]
+  invoices                    Invoice[]
+
+  @@unique([organization_id, number])
+  @@index([customer_id])
+  @@index([vehicle_id])
+  @@index([technician_id])
+  @@index([status])
+  @@index([organization_id])
+  @@index([bay_id])
+  @@index([scheduled_start])
+}
+
+// Service Items (line items for estimates and work orders)
+model ServiceItem {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  estimate_id                 String?                     @db.Uuid
+  work_order_id               String?                     @db.Uuid
+  description                 String                      @db.Text
+  quantity                    Decimal?                    @default(1) @db.Decimal(10, 2)
+  unit_price                  Decimal?                    @default(0) @db.Decimal(10, 2)
+  total_price                 Decimal?                    @default(0) @db.Decimal(10, 2)
+  item_type                   String                      @default("labor") @db.Text
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  organization_id             String                      @db.Uuid
+
+  // Relations
+  estimate                    Estimate?                   @relation(fields: [estimate_id], references: [id], onDelete: Cascade)
+  work_order                  WorkOrder?                  @relation(fields: [work_order_id], references: [id], onDelete: Cascade)
+  organization                Organization                @relation(fields: [organization_id], references: [id])
+
+  @@index([estimate_id])
+  @@index([work_order_id])
+  @@index([organization_id])
+}
+
+// Photos
+model Photo {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  work_order_id               String?                     @db.Uuid
+  url                         String                      @db.Text
+  category                    String                      @db.Text
+  description                 String?                     @default("") @db.Text
+  uploaded_by                 String?                     @db.Uuid
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  organization_id             String                      @db.Uuid
+
+  // Relations
+  work_order                  WorkOrder?                  @relation(fields: [work_order_id], references: [id], onDelete: Cascade)
+  uploader                    Profile?                    @relation(fields: [uploaded_by], references: [id], onDelete: SetNull)
+  organization                Organization                @relation(fields: [organization_id], references: [id])
+
+  @@index([work_order_id])
+  @@index([organization_id])
+}
+
+// Waivers
+model Waiver {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customer_id                 String?                     @db.Uuid
+  work_order_id               String?                     @db.Uuid
+  signature_data              String                      @db.Text
+  ip_address                  String?                     @db.Inet
+  signed_at                   DateTime?                   @default(now()) @db.Timestamptz(6)
+  waiver_text                 String                      @db.Text
+  organization_id             String                      @db.Uuid
+
+  // Relations
+  customer                    Profile?                    @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  work_order                  WorkOrder?                  @relation(fields: [work_order_id], references: [id], onDelete: Cascade)
+  organization                Organization                @relation(fields: [organization_id], references: [id])
+
+  @@index([organization_id])
+  @@index([work_order_id])
+}
+
+// Parts Inventory
+model Part {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  part_number                 String?                     @db.Text
+  name                        String                      @db.Text
+  description                 String?                     @db.Text
+  category                    String?                     @db.Text
+  brand                       String?                     @db.Text
+  unit_cost                   Decimal                     @default(0) @db.Decimal
+  retail_price                Decimal                     @default(0) @db.Decimal
+  quantity_on_hand            Int                         @default(0)
+  minimum_stock               Int                         @default(0)
+  maximum_stock               Int?
+  location                    String?                     @db.Text
+  supplier                    String?                     @db.Text
+  is_active                   Boolean                     @default(true)
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id])
+
+  @@index([organization_id])
+  @@index([organization_id, category])
+  @@index([organization_id, part_number])
+  @@index([organization_id, quantity_on_hand, minimum_stock])
+}
+
+// Invoices
+model Invoice {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  invoice_number              String                      @unique @db.Text
+  subtotal                    Decimal                     @db.Decimal(10, 2)
+  tax_amount                  Decimal?                    @default(0) @db.Decimal(10, 2)
+  total_amount                Decimal                     @db.Decimal(10, 2)
+  amount_paid                 Decimal?                    @default(0) @db.Decimal(10, 2)
+  amount_due                  Decimal                     @db.Decimal(10, 2)
+  status                      String                      @default("pending") @db.Text
+  invoice_date                DateTime                    @default(now()) @db.Date
+  due_date                    DateTime                    @db.Date
+  paid_at                     DateTime?                   @db.Timestamptz(6)
+  line_items                  Json?                       @default("[]") @db.JsonB
+  payment_method_id           String?                     @db.Uuid
+  transaction_id              String?                     @db.Text
+  notes                       String?                     @db.Text
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  work_order_id               String?                     @db.Uuid
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  payment_method              PaymentMethod?              @relation(fields: [payment_method_id], references: [id])
+  work_order                  WorkOrder?                  @relation(fields: [work_order_id], references: [id])
+  transactions                Transaction[]
+
+  @@index([organization_id])
+  @@index([status])
+  @@index([due_date])
+}
+
+// Payment Methods
+model PaymentMethod {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  gateway_customer_id         String                      @db.Text
+  gateway_payment_method_id   String                      @db.Text
+  card_type                   String                      @db.Text
+  last_four                   String                      @db.Text
+  exp_month                   Int
+  exp_year                    Int
+  cardholder_name             String?                     @db.Text
+  is_default                  Boolean?                    @default(true)
+  is_active                   Boolean?                    @default(true)
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  invoices                    Invoice[]
+  transactions                Transaction[]
+
+  @@index([organization_id])
+}
+
+// Transactions
+model Transaction {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  invoice_id                  String?                     @db.Uuid
+  gateway_transaction_id      String                      @unique @db.Text
+  amount                      Decimal                     @db.Decimal(10, 2)
+  currency                    String?                     @default("USD") @db.Text
+  transaction_type            String                      @db.Text
+  status                      String                      @db.Text
+  payment_method_id           String?                     @db.Uuid
+  card_last_four              String?                     @db.Text
+  payment_model               String?                     @db.Text
+  base_amount                 Decimal?                    @db.Decimal(10, 2)
+  fee_amount                  Decimal?                    @db.Decimal(10, 2)
+  discount_amount             Decimal?                    @db.Decimal(10, 2)
+  gateway_response            Json?                       @db.JsonB
+  failure_reason              String?                     @db.Text
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  processed_at                DateTime?                   @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  invoice                     Invoice?                    @relation(fields: [invoice_id], references: [id])
+  payment_method              PaymentMethod?              @relation(fields: [payment_method_id], references: [id])
+
+  @@index([organization_id])
+  @@index([invoice_id])
+  @@index([gateway_transaction_id])
+}
+
+// Technician Settings
+model TechnicianSetting {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profile_id                  String                      @unique @db.Uuid
+  organization_id             String                      @db.Uuid
+  display_color               String                      @default("#3b82f6") @db.Text
+  display_initials            String                      @db.Text
+  hourly_rate                 Decimal?                    @default(0) @db.Decimal
+  specialties                 String[]                    @db.Text
+  is_active                   Boolean                     @default(true)
+  display_order               Int                         @default(0)
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  profile                     Profile                     @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([organization_id])
+  @@index([profile_id])
+}
+
+// Subscription History
+model SubscriptionHistory {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  previous_plan               String?                     @db.Text
+  new_plan                    String                      @db.Text
+  action                      String                      @db.Text
+  previous_amount             Decimal?                    @db.Decimal(10, 2)
+  new_amount                  Decimal?                    @db.Decimal(10, 2)
+  effective_date              DateTime?                   @default(now()) @db.Timestamptz(6)
+  notes                       String?                     @db.Text
+  changed_by                  String?                     @db.Uuid
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([organization_id])
+  @@index([effective_date(sort: Desc)])
+}
+
+// Monthly Targets
+model MonthlyTarget {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  month                       Int
+  year                        Int
+  revenue_target              Decimal?                    @default(0) @db.Decimal(12, 2)
+  jobs_target                 Int?                        @default(0)
+  avg_ticket_target           Decimal?                    @default(0) @db.Decimal(10, 2)
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id])
+
+  @@unique([organization_id, month, year])
+}
+
+// Usage Tracking
+model UsageTracking {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id             String                      @db.Uuid
+  metric                      String                      @db.Text
+  value                       Int
+  period                      DateTime                    @db.Date
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, metric, period])
+  @@index([organization_id, period])
+}
+
+// Tenant Sequences
+model TenantSequence {
+  organization_id             String                      @id @db.Uuid
+  work_order_seq              BigInt                      @default(0)
+  estimate_seq                BigInt                      @default(0)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  organization                Organization                @relation(fields: [organization_id], references: [id])
 }
 
