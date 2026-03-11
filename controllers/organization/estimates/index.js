@@ -4,6 +4,9 @@ const { CODES } = require('../../../utils/statusCodes')
 
 const estimateController = {}
 
+const DEFAULT_LIMIT = 10
+const MAX_LIMIT = 100
+
 const ALLOWED_STATUSES = [
   'draft',
   'sent',
@@ -55,14 +58,14 @@ estimateController.getAllEstimates = async (req, res) => {
 
     const {
       page = 1,
-      limit = 10,
+      limit = DEFAULT_LIMIT,
       status,
       search = '',
       sortOrder = 'desc'
     } = req.query
 
-    const pageNum = parseInt(page, 10)
-    const limitNum = parseInt(limit, 10)
+    const pageNum = parseInt(page, 10) || 1
+    const limitNum = Math.min(parseInt(limit, 10) || DEFAULT_LIMIT, MAX_LIMIT)
     const order = sortOrder === 'asc' ? 'asc' : 'desc'
 
     if (status && !ALLOWED_STATUSES.includes(status)) {

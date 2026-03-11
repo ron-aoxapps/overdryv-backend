@@ -4,5 +4,9 @@ const workOrderController = require('../../controllers/organization/workOrders/i
 
 router.get('/stats', workOrderController.getWorkOrderStats);
 router.get('/', workOrderController.getAllWorkOrders);
+router.get('/:id', workOrderController.getWorkOrderById);
+router.post('/', workOrderController.createWorkOrder);
+router.put('/:id', workOrderController.updateWorkOrder);
+router.delete('/:id', workOrderController.deleteWorkOrder);
 
 module.exports = router;
